@@ -11,6 +11,8 @@
   let videoElement: HTMLVideoElement;
   let stream: MediaStream | null = null;
 
+  const STORAGE_KEY = 'quickcap_preferences';
+
   const resolutions = [
     { value: '1280x720', label: '1280x720 (720p)' },
     { value: '1920x1080', label: '1920x1080 (1080p)' },
@@ -23,6 +25,77 @@
     { value: '60', label: '60 FPS' },
     { value: '120', label: '120 FPS' }
   ];
+
+  // Save user preferences to localStorage
+  function savePreferences(): void {
+    // Don't save during SSR
+    if (typeof localStorage === 'undefined') return;
+    
+    const preferences = {
+      selectedResolution,
+      selectedFps,
+      captureAudio,
+      // Store the label of the device instead of the ID, as IDs can change between sessions
+      selectedDeviceLabel: videoDevices.find(d => d.deviceId === selectedDevice)?.label || ''
+    };
+    
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+      console.log('Preferences saved:', preferences);
+    } catch (error) {
+      console.error('Error saving preferences:', error);
+    }
+  }
+
+  // Load user preferences from localStorage
+  function loadPreferences(): void {
+    // Don't load during SSR
+    if (typeof localStorage === 'undefined') return;
+    
+    try {
+      const savedPrefs = localStorage.getItem(STORAGE_KEY);
+      if (savedPrefs) {
+        const preferences = JSON.parse(savedPrefs);
+        console.log('Loaded preferences:', preferences);
+        
+        // Apply saved preferences
+        selectedResolution = preferences.selectedResolution || '1920x1080';
+        selectedFps = preferences.selectedFps || '30';
+        captureAudio = preferences.captureAudio || false;
+        
+        // If we have a saved device label, try to find it in the current devices
+        if (preferences.selectedDeviceLabel && videoDevices.length > 0) {
+          const matchingDevice = videoDevices.find(d => d.label === preferences.selectedDeviceLabel);
+          if (matchingDevice) {
+            selectedDevice = matchingDevice.deviceId;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading preferences:', error);
+    }
+  }
+
+  // Watch for changes to save preferences
+  $: {
+    // Only save if we have valid selections and the page is mounted
+    if (selectedDevice && selectedResolution && selectedFps !== undefined && typeof window !== 'undefined') {
+      savePreferences();
+    }
+  }
+  
+  // Also watch individual settings to immediately save changes
+  $: if (typeof window !== 'undefined') {
+    if (selectedResolution) savePreferences();
+  }
+  
+  $: if (typeof window !== 'undefined') {
+    if (selectedFps) savePreferences();
+  }
+  
+  $: if (typeof window !== 'undefined') {
+    if (captureAudio !== undefined) savePreferences();
+  }
 
   onMount(async () => {
     try {
@@ -46,6 +119,9 @@
       if (videoDevices.length > 0) {
         selectedDevice = videoDevices[0].deviceId;
       }
+      
+      // Load saved preferences after devices are enumerated
+      loadPreferences();
     } catch (error) {
       console.error('Error accessing media devices:', error);
     }
@@ -64,6 +140,9 @@
         alert('Please select a video device');
         return;
       }
+      
+      // Ensure preferences are saved before starting capture
+      savePreferences();
 
       // Parse the selected resolution
       const [width, height] = selectedResolution.split('x').map(Number);
@@ -183,12 +262,12 @@
         
         <div class="form-group checkbox">
           <input type="checkbox" id="audio-checkbox" bind:checked={captureAudio}>
-          <label for="audio-checkbox">Capturar audio (desde la capturadora o compartiendo pantalla)</label>
+          <label for="audio-checkbox">Capture audio (from capture device or screen sharing)</label>
         </div>
         
         <div class="audio-help-text">
-          <small>Si tu capturadora soporta audio, este será detectado automáticamente. 
-          Si no se encuentra audio de la capturadora, se te pedirá compartir el audio de la pantalla.</small>
+          <small>If your capture device supports audio, it will be detected automatically. 
+          If no capture device audio is found, you will be prompted to share screen audio.</small>
         </div>
         
         <button on:click={startCapture}>Start video capture</button>
@@ -202,7 +281,7 @@
         autoplay 
         playsInline 
         muted={false}
-        controls={true}
+        controls={false}
         width="100%"
         height="100%"
       ></video>
