@@ -73,33 +73,66 @@
         stopMediaStream(stream);
       }
       
-      // Get new media stream with selected settings
-      stream = await createMediaStream(
-        selectedDevice,
-        width,
-        height,
-        Number(selectedFps),
-        captureAudio
-      );
-      
-      // Set capturing state first (UI should update before we try to access video element)
-      isCapturing = true;
-      
-      // We need to wait for the next tick to ensure the video element is rendered
-      setTimeout(() => {
-        if (videoElement && stream) {
-          applyStreamToVideo(videoElement, stream);
+      try {
+        // Get new media stream with selected settings
+        stream = await createMediaStream(
+          selectedDevice,
+          width,
+          height,
+          Number(selectedFps),
+          captureAudio
+        );
+        
+        // Set capturing state first (UI should update before we try to access video element)
+        isCapturing = true;
+        
+        // We need to wait for the next tick to ensure the video element is rendered
+        setTimeout(() => {
+          if (videoElement && stream) {
+            applyStreamToVideo(videoElement, stream);
+            
+            // Log success to console for debugging
+            console.log('Video capture started successfully', {
+              width, 
+              height,
+              fps: selectedFps,
+              audio: captureAudio,
+              device: selectedDevice
+            });
+          }
+        }, 100);
+      } catch (error) {
+        // If audio capture fails, try again without audio
+        if (captureAudio) {
+          console.warn('Audio capture failed, trying without audio:', error);
           
-          // Log success to console for debugging
-          console.log('Video capture started successfully', {
-            width, 
+          stream = await createMediaStream(
+            selectedDevice,
+            width,
             height,
-            fps: selectedFps,
-            audio: captureAudio,
-            device: selectedDevice
-          });
+            Number(selectedFps),
+            false // Disable audio
+          );
+          
+          isCapturing = true;
+          
+          setTimeout(() => {
+            if (videoElement && stream) {
+              applyStreamToVideo(videoElement, stream);
+              
+              console.log('Video capture started without audio successfully', {
+                width, 
+                height,
+                fps: selectedFps,
+                audio: false,
+                device: selectedDevice
+              });
+            }
+          }, 100);
+        } else {
+          throw error; // Re-throw if audio wasn't the issue
         }
-      }, 100);
+      }
     } catch (error) {
       console.error('Error starting capture:', error);
       alert('Failed to start capture: ' + error);
@@ -150,7 +183,12 @@
         
         <div class="form-group checkbox">
           <input type="checkbox" id="audio-checkbox" bind:checked={captureAudio}>
-          <label for="audio-checkbox">Capture audio</label>
+          <label for="audio-checkbox">Capturar audio (desde la capturadora o compartiendo pantalla)</label>
+        </div>
+        
+        <div class="audio-help-text">
+          <small>Si tu capturadora soporta audio, este será detectado automáticamente. 
+          Si no se encuentra audio de la capturadora, se te pedirá compartir el audio de la pantalla.</small>
         </div>
         
         <button on:click={startCapture}>Start video capture</button>
@@ -163,8 +201,8 @@
         bind:this={videoElement} 
         autoplay 
         playsInline 
-        muted={!captureAudio}
-        controls={false}
+        muted={false}
+        controls={true}
         width="100%"
         height="100%"
       ></video>
@@ -258,6 +296,14 @@
   .checkbox label {
     margin-bottom: 0;
     margin-left: 0.5rem;
+  }
+  
+  .audio-help-text {
+    margin-top: -0.8rem;
+    margin-bottom: 1.2rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8rem;
+    line-height: 1.2;
   }
 
   input[type="checkbox"] {
